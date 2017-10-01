@@ -22,21 +22,59 @@ const assert = chai.assert;
 
 suite('until', () => {
 
+  let container: HTMLDivElement;
+  let deferred: Deferred<string>;
+
+  setup(() => {
+    container = document.createElement('div');
+    deferred = new Deferred<string>();
+  });
+
   test('displays defaultContent immediately', () => {
-    const container = document.createElement('div');
-    let resolve: (v: any) => void;
-    const promise = new Promise((res, _) => {
-      resolve = res;
-    });
     render(
-        html`<div>${until(promise, html`<span>loading...</span>`)}</div>`,
+        html
+        `<div>${until(deferred.promise, html`<span>loading...</span>`)}</div>`,
         container);
     assert.equal(container.innerHTML, '<div><span>loading...</span></div>');
-    resolve!('foo');
-    return promise.then(() => new Promise((r) => setTimeout(() => r())))
+    deferred.resolve('foo');
+    return deferred.promise.then(() => new Promise((r) => setTimeout(() => r())))
         .then(() => {
           assert.equal(container.innerHTML, '<div>foo</div>');
         });
   });
 
+  test('renders new Promise over existing Promise', () => {
+    const t = (v: any) =>
+        html`<div>${until(v, html`<span>loading...</span>`)}</div>`;
+    render(t(deferred.promise), container);
+    assert.equal(container.innerHTML, '<div><span>loading...</span></div>');
+
+    const deferred2 = new Deferred<string>();
+    render(t(deferred2.promise), container);
+    assert.equal(container.innerHTML, '<div><span>loading...</span></div>');
+
+    deferred2.resolve('bar');
+    return deferred2.promise.then(() => {
+      assert.equal(container.innerHTML, '<div>bar</div>');
+
+      deferred.resolve('foo');
+      return deferred.promise.then(() => {
+        assert.equal(container.innerHTML, '<div>bar</div>');
+      });
+    });
+  });
+
 });
+
+class Deferred<T> {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (error: Error) => void;
+
+  constructor() {
+    this.promise = new Promise<T>((res, rej) => {
+      this.resolve! = res;
+      this.reject! = rej;
+    });
+  }
+}
