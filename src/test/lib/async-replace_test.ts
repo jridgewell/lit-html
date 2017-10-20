@@ -24,7 +24,7 @@ const assert = chai.assert;
 
 // Set Symbol.asyncIterator on browsers without it
 if (typeof Symbol !== undefined && Symbol.asyncIterator === undefined) {
-  Object.defineProperty(Symbol, 'asyncIterator', {value: Symbol()});
+  Object.defineProperty(Symbol, 'Symbol.asyncIterator', {value: Symbol()});
 }
 
 suite('asyncReplace', () => {
@@ -37,7 +37,7 @@ suite('asyncReplace', () => {
     iterable = new TestAsyncIterable<string>();
   });
 
-  test('renders an async iterable', async () => {
+  test('replaces content as the async iterable yields new values', async () => {
     render(html`<div>${asyncReplace(iterable)}</div>`, container);
     assert.equal(container.innerHTML, '<div></div>');
 
@@ -48,7 +48,7 @@ suite('asyncReplace', () => {
     assert.equal(container.innerHTML, '<div>bar</div>');
   });
 
-  test('renders an async iterable containing undefined', async () => {
+  test('clears the Part when a value is undefined', async () => {
     render(html`<div>${asyncReplace(iterable)}</div>`, container);
     assert.equal(container.innerHTML, '<div></div>');
 
@@ -59,7 +59,7 @@ suite('asyncReplace', () => {
     assert.equal(container.innerHTML, '<div></div>');
   });
 
-  test('renders a mapped async iterable', async () => {
+  test('uses the mapper function', async () => {
     render(
         html`<div>${asyncReplace(iterable, (v, i) => html`${i}: ${v} `)}</div>`,
         container);
@@ -94,7 +94,7 @@ suite('asyncReplace', () => {
   test('renders new value over a pending iterable', async () => {
     const t = (v: any) => html`<div>${v}</div>`;
     // This is a little bit of an odd usage of directives as values, but it
-    // it possible, and we check here that asyncAppend plays nice in this case
+    // is possible, and we check here that asyncReplace plays nice in this case
     render(t(asyncReplace(iterable)), container);
     assert.equal(container.innerHTML, '<div></div>');
 

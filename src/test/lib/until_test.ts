@@ -17,6 +17,7 @@
 
 import {until} from '../../lib/until.js';
 import {html, render} from '../../lit-html.js';
+import { Deferred } from './deferred.js';
 
 const assert = chai.assert;
 
@@ -65,16 +66,3 @@ suite('until', () => {
   });
 
 });
-
-class Deferred<T> {
-  readonly promise: Promise<T>;
-  readonly resolve: (value: T) => void;
-  readonly reject: (error: Error) => void;
-
-  constructor() {
-    this.promise = new Promise<T>((res, rej) => {
-      this.resolve! = res;
-      this.reject! = rej;
-    });
-  }
-}
