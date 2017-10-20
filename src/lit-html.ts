@@ -444,7 +444,7 @@ export class NodePart implements SinglePart {
 
   private _setText(value: string): void {
     const node = this.startNode.nextSibling!;
-    value === undefined ? '' : value;
+    value = value === undefined ? '' : value;
     if (node === this.endNode.previousSibling &&
         node.nodeType === Node.TEXT_NODE) {
       // If we only have a single text node between the markers, we can just

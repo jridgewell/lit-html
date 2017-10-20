@@ -59,7 +59,7 @@ export const asyncAppend =
             // we accept a mapper function. This is especially convenient for
             // rendering a template for each item.
             if (mapper !== undefined) {
-              v = mapper(v);
+              v = mapper(v, i);
             }
 
             // Like with sync iterables, each item induces a Part, so we need

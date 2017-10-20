@@ -20,5 +20,5 @@ import {directive, NodePart} from '../lit-html.js';
 export const until = (promise: Promise<any>, defaultContent: any) =>
     directive((part: NodePart) => {
       part.setValue(defaultContent);
-      promise.then((v) => part.setValue(v));
+      part.setValue(promise);
     });
