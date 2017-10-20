@@ -64,9 +64,10 @@ export const asyncReplace =
             // we accept a mapper function. This is especially convenient for
             // rendering a template for each item.
             if (mapper !== undefined) {
-              v = mapper(v, i++);
+              v = mapper(v);
             }
 
             itemPart.setValue(v);
+            i++;
           }
         });

@@ -59,7 +59,7 @@ export const asyncAppend =
             // we accept a mapper function. This is especially convenient for
             // rendering a template for each item.
             if (mapper !== undefined) {
-              v = mapper(v, i++);
+              v = mapper(v);
             }
 
             // Like with sync iterables, each item induces a Part, so we need
@@ -83,5 +83,6 @@ export const asyncAppend =
             }
             itemPart = new NodePart(part.instance, itemStartNode, part.endNode);
             itemPart.setValue(v);
+            i++;
           }
         });
