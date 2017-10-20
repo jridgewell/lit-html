@@ -444,6 +444,7 @@ export class NodePart implements SinglePart {
 
   private _setText(value: string): void {
     const node = this.startNode.nextSibling!;
+    value === undefined ? '' : value;
     if (node === this.endNode.previousSibling &&
         node.nodeType === Node.TEXT_NODE) {
       // If we only have a single text node between the markers, we can just
@@ -452,7 +453,7 @@ export class NodePart implements SinglePart {
       // primitive?
       node.textContent = value;
     } else {
-      this._setNode(document.createTextNode(value === undefined ? '' : value));
+      this._setNode(document.createTextNode(value));
     }
     this._previousValue = value;
   }
