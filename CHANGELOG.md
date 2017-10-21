@@ -10,7 +10,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
    Unreleased section, uncommenting the header as necessary.
 -->
 
-<!-- ## Unreleased -->
+## Unreleased
+
+* Added the `asyncAppend` and `asyncReplace` directives to handle async iterable values
+  in expressions.
 
 ## [0.7.0] - 2017-10-06
 
