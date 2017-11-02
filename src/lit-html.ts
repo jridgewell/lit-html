@@ -110,12 +110,10 @@ export function render(
  * https://github.com/PolymerLabs/lit-html/issues/62
  */
 const attributeMarker = `{{lit-${Math.random()}}}`;
-
 const textMarkerContent = '_-lit-html-_';
 const textMarker = `<!--${textMarkerContent}-->`;
-const attrOrTextRegex = new RegExp(`${attributeMarker}|${textMarker}`);
 const lastAttributeNameRegex =
-    /((?:\w|[.\-_$])+)=(?:[^"']*|(?:["][^"]*)|(?:['][^']*))$/;
+    /([\w.\-_$]+)=(?:[^"']*|["][^"]*|['][^']*)$/;
 
 /**
  * Finds the closing index of the last closed HTML tag.
@@ -166,42 +164,33 @@ export class Template {
     // Edge needs all 4 parameters present; IE11 needs 3rd parameter to be null
     const walker = document.createTreeWalker(
         this.element.content,
-        133 /* NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT |
-               NodeFilter.SHOW_TEXT */
-        ,
+        129 /* NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT */,
         null as any,
         false);
     let index = -1;
     let partIndex = 0;
-    const nodesToRemove: Node[] = [];
-
-    // The actual previous node, accounting for removals: if a node is removed
-    // it will never be the previousNode.
-    let previousNode: Node|undefined;
-    // Used to set previousNode at the top of the loop.
-    let currentNode: Node|undefined;
 
     while (walker.nextNode()) {
       index++;
-      previousNode = currentNode;
-      const node = currentNode = walker.currentNode as Element;
+      const node = walker.currentNode as Element;
       if (node.nodeType === 1 /* Node.ELEMENT_NODE */) {
         if (!node.hasAttributes()) {
           continue;
         }
+
         const attributes = node.attributes;
         // Per https://developer.mozilla.org/en-US/docs/Web/API/NamedNodeMap,
         // attributes are not guaranteed to be returned in document order. In
         // particular, Edge/IE can return them out of order, so we cannot assume
         // a correspondance between part index and attribute index.
+        let count = 0;
+        for (let i = 0; i < attributes.length; i++) {
+          if (attributes[i].value.indexOf(attributeMarker) >= 0) {
+            count++;
+          }
+        }
 
-        // Do a first pass to count attributes that correspond to parts.
-        const attributesWithParts: string[][] = Array.prototype.filter.call(
-            attributes,
-            (attribute: Attr) =>
-                attribute.value.split(attrOrTextRegex).length > 1);
-        // Loop that many times, but don't use loop index for anything.
-        for (let i = 0; i < attributesWithParts.length; i++) {
+        for (let i = 0; i < count; i++) {
           // Get the template literal section leading up to the first
           // expression in this attribute attribute
           const stringForPart = strings[partIndex];
@@ -209,84 +198,20 @@ export class Template {
           const attributeNameInPart = stringForPart.match(lastAttributeNameRegex)![1];
           // Find the corresponding attribute
           const attribute = attributes.getNamedItem(attributeNameInPart);
-          const stringsForAttributeValue =
-              attribute.value.split(attrOrTextRegex);
+          const stringsForAttributeValue = attribute.value.split(attributeMarker);
           this.parts.push(new TemplatePart(
               'attribute',
               index,
               attribute.name,
               attributeNameInPart,
               stringsForAttributeValue));
-          node.removeAttribute(attribute.name);
+          node.removeAttribute(attributeNameInPart);
           partIndex += stringsForAttributeValue.length - 1;
         }
-      } else if (node.nodeType === 3 /* Node.TEXT_NODE */) {
-        const nodeValue = node.nodeValue!;
-        const strings = nodeValue.split(attrOrTextRegex);
-        if (strings.length > 1) {
-          const parent = node.parentNode!;
-          const lastIndex = strings.length - 1;
-
-          // We have a part for each match found
-          partIndex += lastIndex;
-
-          // We keep this current node, but reset its content to the last
-          // literal part. We insert new literal nodes before this so that the
-          // tree walker keeps its position correctly.
-          node.textContent = strings[lastIndex];
-
-          // Generate a new text node for each literal section
-          // These nodes are also used as the markers for node parts
-          for (let i = 0; i < lastIndex; i++) {
-            parent.insertBefore(document.createTextNode(strings[i]), node);
-            this.parts.push(new TemplatePart('node', index++));
-          }
-        } else {
-          // Strip whitespace-only nodes, only between elements, or at the
-          // beginning or end of elements.
-          const previousSibling = node.previousSibling;
-          const nextSibling = node.nextSibling;
-          if ((previousSibling === null ||
-               previousSibling.nodeType === 1 /* Node.ELEMENT_NODE */) &&
-              (nextSibling === null ||
-               nextSibling.nodeType === 1 /* Node.ELEMENT_NODE */) &&
-              nodeValue.trim() === '') {
-            nodesToRemove.push(node);
-            currentNode = previousNode;
-            index--;
-          }
-        }
-      } else if (
-          node.nodeType === 8 /* Node.COMMENT_NODE */ &&
-          node.nodeValue === textMarkerContent) {
-        const parent = node.parentNode!;
-        // If we don't have a previous node add a marker node.
-        // If the previousSibling is removed, because it's another part
-        // placholder, or empty text, add a marker node.
-        if (node.previousSibling === null ||
-            node.previousSibling !== previousNode) {
-          parent.insertBefore(document.createTextNode(''), node);
-        } else {
-          index--;
-        }
-        this.parts.push(new TemplatePart('node', index++));
-        nodesToRemove.push(node);
-        // If we don't have a next node add a marker node.
-        // We don't have to check if the next node is going to be removed,
-        // because that node will induce a marker if so.
-        if (node.nextSibling === null) {
-          parent.insertBefore(document.createTextNode(''), node);
-        } else {
-          index--;
-        }
-        currentNode = previousNode;
+      } else if (node.nodeValue === textMarkerContent) {
+        this.parts.push(new TemplatePart('node', index));
         partIndex++;
       }
-    }
-
-    // Remove text binding nodes after the walk to not disturb the TreeWalker
-    for (const n of nodesToRemove) {
-      n.parentNode!.removeChild(n);
     }
   }
 
@@ -294,10 +219,10 @@ export class Template {
    * Returns a string of HTML used to create a <template> element.
    */
   private _getHtml(strings: TemplateStringsArray, svg?: boolean): string {
-    const l = strings.length;
+    const length = strings.length;
     let html = '';
     let isTextBinding = true;
-    for (let i = 0; i < l - 1; i++) {
+    for (let i = 0; i < length - 1; i++) {
       const s = strings[i];
       html += s;
       // We're in a text position if the previous string closed its tags.
@@ -307,7 +232,7 @@ export class Template {
       isTextBinding = closing > -1 ? closing < s.length : isTextBinding;
       html += isTextBinding ? textMarker : attributeMarker;
     }
-    html += strings[l - 1];
+    html += strings[length - 1];
     return svg ? `<svg>${html}</svg>` : html;
   }
 }
@@ -362,23 +287,23 @@ export class AttributePart implements MultiPart {
 
   setValue(values: any[], startIndex: number): void {
     const strings = this.strings;
+    const length = strings.length;
     let text = '';
 
-    for (let i = 0; i < strings.length; i++) {
+    for (let i = 0; i < length - 1; i++) {
       text += strings[i];
-      if (i < strings.length - 1) {
-        const v = getValue(this, values[startIndex + i]);
-        if (v &&
-            (Array.isArray(v) || typeof v !== 'string' && v[Symbol.iterator])) {
-          for (const t of v) {
-            // TODO: we need to recursively call getValue into iterables...
-            text += t;
-          }
-        } else {
-          text += v;
+      const v = getValue(this, values[startIndex + i]);
+      if (v &&
+        (Array.isArray(v) || typeof v !== 'string' && v[Symbol.iterator])) {
+        for (const t of v) {
+          // TODO: we need to recursively call getValue into iterables...
+          text += t;
         }
+      } else {
+        text += v;
       }
     }
+    text += strings[length - 1];
     this.element.setAttribute(this.name, text);
   }
 }
