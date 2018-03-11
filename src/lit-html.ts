@@ -57,19 +57,11 @@ export class TemplateResult {
   getHTML(): string {
     const l = this.strings.length - 1;
     let html = '';
-    let isTextBinding = true;
     for (let i = 0; i < l; i++) {
       const s = this.strings[i];
-      html += s;
-      // We're in a text position if the previous string closed its tags.
-      // If it doesn't have any tags, then we use the previous text position
-      // state.
-      const closing = findTagClose(s);
-      isTextBinding = closing > -1 ? closing < s.length : isTextBinding;
-      html += isTextBinding ? nodeMarker : marker;
+      html += s + marker;
     }
-    html += this.strings[l];
-    return html;
+    return html + this.strings[l];
   }
 
   getTemplateElement(): HTMLTemplateElement {
@@ -187,14 +179,6 @@ export function render(
 const marker = `{{lit-${String(Math.random()).slice(2)}}}`;
 
 /**
- * An expression marker used text-posisitions, not attribute positions,
- * in template.
- */
-const nodeMarker = `<!--${marker}-->`;
-
-const markerRegex = new RegExp(`${marker}|${nodeMarker}`);
-
-/**
  * This regex extracts the attribute name preceding an attribute-position
  * expression. It does this by matching the syntax allowed for attributes
  * against the string literal directly preceding the expression, assuming that
@@ -221,19 +205,6 @@ const markerRegex = new RegExp(`${marker}|${nodeMarker}`);
  */
 const lastAttributeNameRegex =
     /[ \x09\x0a\x0c\x0d]([^\0-\x1F\x7F-\x9F \x09\x0a\x0c\x0d"'>=/]+)[ \x09\x0a\x0c\x0d]*=[ \x09\x0a\x0c\x0d]*(?:[^ \x09\x0a\x0c\x0d"'`<>=]*|"[^"]*|'[^']*)$/;
-
-/**
- * Finds the closing index of the last closed HTML tag.
- * This has 3 possible return values:
- *   - `-1`, meaning there is no tag in str.
- *   - `string.length`, meaning the last opened tag is unclosed.
- *   - Some positive number < str.length, meaning the index of the closing '>'.
- */
-function findTagClose(str: string): number {
-  const close = str.lastIndexOf('>');
-  const open = str.indexOf('<', close + 1);
-  return open > -1 ? str.length : close;
-}
 
 /**
  * A placeholder for a dynamic expression in an HTML template.
@@ -263,6 +234,7 @@ export class TemplatePart {
  */
 export class Template {
   parts: TemplatePart[] = [];
+  emptyIndexes: number[] = [];
   element: HTMLTemplateElement;
 
   constructor(result: TemplateResult, element: HTMLTemplateElement) {
@@ -271,25 +243,15 @@ export class Template {
     // Edge needs all 4 parameters present; IE11 needs 3rd parameter to be null
     const walker = document.createTreeWalker(
         content,
-        133 /* NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT |
-               NodeFilter.SHOW_TEXT */
-        ,
+        5 /* NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT */,
         null as any,
         false);
     let index = -1;
     let partIndex = 0;
-    const nodesToRemove: Node[] = [];
-
-    // The actual previous node, accounting for removals: if a node is removed
-    // it will never be the previousNode.
-    let previousNode: Node|undefined;
-    // Used to set previousNode at the top of the loop.
-    let currentNode: Node|undefined;
 
     while (walker.nextNode()) {
       index++;
-      previousNode = currentNode;
-      const node = currentNode = walker.currentNode as Element;
+      const node = walker.currentNode as Element;
       if (node.nodeType === 1 /* Node.ELEMENT_NODE */) {
         if (!node.hasAttributes()) {
           continue;
@@ -314,7 +276,7 @@ export class Template {
               lastAttributeNameRegex.exec(stringForPart)![1];
           // Find the corresponding attribute
           const attribute = attributes.getNamedItem(attributeNameInPart);
-          const stringsForAttributeValue = attribute.value.split(markerRegex);
+          const stringsForAttributeValue = attribute.value.split(marker);
           this.parts.push(new TemplatePart(
               'attribute',
               index,
@@ -324,69 +286,41 @@ export class Template {
           node.removeAttribute(attribute.name);
           partIndex += stringsForAttributeValue.length - 1;
         }
-      } else if (node.nodeType === 3 /* Node.TEXT_NODE */) {
+      } else /* Node.TEXT_NODE */ {
         const nodeValue = node.nodeValue!;
         if (nodeValue.indexOf(marker) < 0) {
           continue;
         }
 
         const parent = node.parentNode!;
-        const strings = nodeValue.split(markerRegex);
+        const strings = nodeValue.split(marker);
         const lastIndex = strings.length - 1;
 
         // We have a part for each match found
         partIndex += lastIndex;
 
-        // We keep this current node, but reset its content to the last
-        // literal part. We insert new literal nodes before this so that the
-        // tree walker keeps its position correctly.
-        node.textContent = strings[lastIndex];
-
         // Generate a new text node for each literal section
         // These nodes are also used as the markers for node parts
         for (let i = 0; i < lastIndex; i++) {
-          parent.insertBefore(document.createTextNode(strings[i]), node);
+          let str = strings[i];
+          // If it's empty, we'll clean it up after cloning.
+          if (str === '') {
+            str = marker;
+            this.emptyIndexes.push(index);
+          }
+          parent.insertBefore(document.createTextNode(str), node);
           this.parts.push(new TemplatePart('node', index++));
         }
-      } else if (
-          node.nodeType === 8 /* Node.COMMENT_NODE */ &&
-          node.nodeValue === marker) {
-        const parent = node.parentNode!;
-        // Add a new marker node to be the startNode of the Part if any of the
-        // following are true:
-        //  * We don't have a previousSibling
-        //  * previousSibling is being removed (thus it's not the
-        //    `previousNode`)
-        //  * previousSibling is not a Text node
-        //
-        // TODO(justinfagnani): We should be able to use the previousNode here
-        // as the marker node and reduce the number of extra nodes we add to a
-        // template. See https://github.com/PolymerLabs/lit-html/issues/147
-        const previousSibling = node.previousSibling;
-        if (previousSibling === null || previousSibling !== previousNode ||
-            previousSibling.nodeType !== Node.TEXT_NODE) {
-          parent.insertBefore(document.createTextNode(''), node);
-        } else {
-          index--;
-        }
-        this.parts.push(new TemplatePart('node', index++));
-        nodesToRemove.push(node);
-        // If we don't have a nextSibling add a marker node.
-        // We don't have to check if the next node is going to be removed,
-        // because that node will induce a new marker if so.
-        if (node.nextSibling === null) {
-          parent.insertBefore(document.createTextNode(''), node);
-        } else {
-          index--;
-        }
-        currentNode = previousNode;
-        partIndex++;
-      }
-    }
 
-    // Remove text binding nodes after the walk to not disturb the TreeWalker
-    for (const n of nodesToRemove) {
-      n.parentNode!.removeChild(n);
+        // We keep the current node, but reset its content to the last last
+        // string. If it's empty, we'll clean it up after cloning.
+        let str = strings[lastIndex];
+        if (str === '') {
+          str = marker;
+          this.emptyIndexes.push(index);
+        }
+        node.textContent = str;
+      }
     }
   }
 }
@@ -719,24 +653,30 @@ export class TemplateInstance {
   _clone(): DocumentFragment {
     const fragment = document.importNode(this.template.element.content, true);
     const parts = this.template.parts;
+    const empties = this.template.emptyIndexes;
 
     if (parts.length > 0) {
       // Edge needs all 4 parameters present; IE11 needs 3rd parameter to be
       // null
       const walker = document.createTreeWalker(
           fragment,
-          133 /* NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT |
-                 NodeFilter.SHOW_TEXT */
-          ,
+          5 /* NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT */,
           null as any,
           false);
 
       let index = -1;
+      let emptyIndex = 0;
+      let empty = empties.length ? empties[0] : -1;
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
         while (index < part.index) {
           index++;
           walker.nextNode();
+          if (index === empty) {
+            walker.currentNode.textContent = '';
+            emptyIndex++;
+            empty = emptyIndex < empties.length ? empties[emptyIndex] : -1;
+          }
         }
         this._parts.push(this._partCallback(this, part, walker.currentNode));
       }
