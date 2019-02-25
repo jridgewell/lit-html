@@ -30,8 +30,6 @@ export const marker = `{{lit-${String(Math.random()).slice(2)}}}`;
  */
 export const nodeMarker = `<!--${marker}-->`;
 
-export const markerRegex = new RegExp(`${marker}|${nodeMarker}`);
-
 /**
  * Suffix appended to all bound attribute names.
  */
@@ -75,7 +73,7 @@ export class Template {
             // assume a correspondance between part index and attribute index.
             let count = 0;
             for (let i = 0; i < attributes.length; i++) {
-              if (attributes[i].value.indexOf(marker) >= 0) {
+              if (attributes[i].value.indexOf(nodeMarker) >= 0) {
                 count++;
               }
             }
@@ -84,7 +82,7 @@ export class Template {
               // expression in this attribute
               const stringForPart = result.strings[partIndex];
               // Find the attribute name
-              const name = lastAttributeNameRegex.exec(stringForPart)![2];
+              const name = lastAttributeNameRegex.exec(stringForPart)![1];
               // Find the corresponding attribute
               // All bound attributes have had a suffix added in
               // TemplateResult#getHTML to opt out of special attribute
@@ -94,7 +92,7 @@ export class Template {
                   name.toLowerCase() + boundAttributeSuffix;
               const attributeValue =
                   (node as Element).getAttribute(attributeLookupName)!;
-              const strings = attributeValue.split(markerRegex);
+              const strings = attributeValue.split(nodeMarker);
               this.parts.push({type: 'attribute', index, name, strings});
               (node as Element).removeAttribute(attributeLookupName);
               partIndex += strings.length - 1;
@@ -105,9 +103,9 @@ export class Template {
           }
         } else if (node.nodeType === 3 /* Node.TEXT_NODE */) {
           const data = (node as Text).data!;
-          if (data.indexOf(marker) >= 0) {
+          if (data.indexOf(nodeMarker) >= 0) {
             const parent = node.parentNode!;
-            const strings = data.split(markerRegex);
+            const strings = data.split(nodeMarker);
             const lastIndex = strings.length - 1;
             // Generate a new text node for each literal section
             // These nodes are also used as the markers for node parts
@@ -206,13 +204,18 @@ export const createMarker = () => document.createComment('');
  * against the string literal directly preceding the expression, assuming that
  * the expression is in an attribute-value position.
  *
- * See attributes in the HTML spec:
- * https://www.w3.org/TR/html5/syntax.html#attributes-0
+ * Capture Group 1 is the name of the attribute.
+ * Capture Group 2 is the value of the attribute, including its quote
+ * Capture Group 3 is either a (') or a ("), if the attribute value is quoted.
  *
- * "\0-\x1F\x7F-\x9F" are Unicode control characters
+ * See attributes in the HTML spec:
+ * https://www.w3.org/TR/html5/syntax.html#elements-attributes
  *
  * " \x09\x0a\x0c\x0d" are HTML space characters:
- * https://www.w3.org/TR/html5/infrastructure.html#space-character
+ * https://www.w3.org/TR/html5/infrastructure.html#space-characters
+ *
+ * "\0-\x1F\x7F-\x9F" are Unicode control characters, which includes all the
+ * space characters except a regular space.
  *
  * So an attribute is:
  *  * The name: any character except a control character, space character, ('),
@@ -226,4 +229,4 @@ export const createMarker = () => document.createComment('');
  *    * (') then any non-(')
  */
 export const lastAttributeNameRegex =
-    /([ \x09\x0a\x0c\x0d])([^\0-\x1F\x7F-\x9F \x09\x0a\x0c\x0d"'>=/]+)([ \x09\x0a\x0c\x0d]*=[ \x09\x0a\x0c\x0d]*(?:[^ \x09\x0a\x0c\x0d"'`<>=]*|"[^"]*|'[^']*))$/;
+    /[ \x09\x0a\x0c\x0d]([^\0-\x1F\x7F-\x9F "'>=/]+)[ \x09\x0a\x0c\x0d]*=[ \x09\x0a\x0c\x0d]*([^ \x09\x0a\x0c\x0d"'`<>=]*|(["'])(?:(?!\3).)*)$/;

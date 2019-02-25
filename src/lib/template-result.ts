@@ -18,7 +18,7 @@
 
 import {reparentNodes} from './dom.js';
 import {TemplateProcessor} from './template-processor.js';
-import {boundAttributeSuffix, lastAttributeNameRegex, marker, nodeMarker} from './template.js';
+import {boundAttributeSuffix, lastAttributeNameRegex, nodeMarker} from './template.js';
 
 /**
  * The return type of `html`, which holds a Template and the values from
@@ -61,8 +61,13 @@ export class TemplateResult {
         // We're starting a new bound attribute.
         // Add the safe attribute suffix, and use unquoted-attribute-safe
         // marker.
-        html += s.substr(0, match.index) + match[1] + match[2] +
-            boundAttributeSuffix + match[3] + marker;
+        html += s.substr(0, match.index) +
+          ` ${match[1]}${boundAttributeSuffix}=`;
+        if (match[3]) {
+          html += match[2] + nodeMarker;
+        } else {
+          html += `"${match[2]}${nodeMarker}"`;
+        }
       } else {
         // We're either in a bound node, or trailing bound attribute.
         // Either way, nodeMarker is safe to use.
