@@ -58,10 +58,10 @@ export class TemplateResult {
       // guaranteed to be quoted.
       const match = lastAttributeNameRegex.exec(s);
       if (match) {
-        // We're starting a new bound attribute.
-        // Add the safe attribute suffix, and use unquoted-attribute-safe
-        // marker.
-        html += s.substr(0, match.index) + match[1] + match[2] +
+        // We're starting a new bound attribute. Add the marker attribute to
+        // the element to speed up scanning, add the safe attribute suffix to
+        // the name, and use safe-in-unquoted-attributes marker.
+        html += s.slice(0, match.index) + ' ' + marker + match[1] + match[2] +
             boundAttributeSuffix + match[3] + marker;
       } else {
         // We're either in a bound node, or trailing bound attribute.

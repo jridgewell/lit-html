@@ -77,7 +77,8 @@ export class Template {
       index++;
 
       if (node.nodeType === 1 /* Node.ELEMENT_NODE */) {
-        if ((node as Element).hasAttributes()) {
+        if ((node as Element).hasAttribute(marker)) {
+          (node as Element).removeAttribute(marker);
           const attributes = (node as Element).attributes;
           const {length} = attributes;
           // Per
@@ -165,8 +166,8 @@ export class Template {
           }
           partIndex++;
         } else {
-          let i = -1;
-          while ((i = (node as Comment).data!.indexOf(marker, i + 1)) !== -1) {
+          let count = commentBindingCount((node as Comment).data);
+          while (count-- > 0) {
             // Comment node has a binding marker inside, make an inactive part
             // The binding won't work, but subsequent bindings will
             // TODO (justinfagnani): consider whether it's even worth it to
@@ -210,6 +211,13 @@ export const isTemplatePartActive = (part: TemplatePart) => part.index !== -1;
 // Allows `document.createComment('')` to be renamed for a
 // small manual size-savings.
 export const createMarker = () => document.createComment('');
+
+const commentBindingCount = (data: string): number => {
+  const bindings = data.split(marker).length - 1;
+  // Subtract the number of safe attribute suffixes, because each one injected
+  // a sentinel marker itself.
+  return bindings - data.split(boundAttributeSuffix).length + 1;
+};
 
 /**
  * This regex extracts the attribute name preceding an attribute-position

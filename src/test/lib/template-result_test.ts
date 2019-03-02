@@ -30,6 +30,7 @@ suite('TemplateResult', () => {
 
   test('style attributes are renamed', () => {
     const templateHTML = html`<div style="color: ${'red'}"></div>`.getHTML();
-    assert.equal(templateHTML, `<div style$lit$="color: ${marker}"></div>`);
+    assert.equal(
+        templateHTML, `<div ${marker} style$lit$="color: ${marker}"></div>`);
   });
 });
