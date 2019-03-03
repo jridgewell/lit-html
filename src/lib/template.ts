@@ -64,7 +64,7 @@ export class Template {
         null,
         false);
     const nodesToRemove: Node[] = [];
-    const stack: Node[] = [];
+    const stack: {node: Node, partIndex: number}[] = [];
 
     // Keeps track of the last part's staring node. We try to delete
     // unnecessary nodes, but we never want to associate two different parts to
@@ -82,7 +82,21 @@ export class Template {
         }
         // We've exhausted the content inside a nested template element. Reset
         // the walker to the template element itself and try to walk from there.
-        walker.currentNode = template;
+        let {node} = template;
+        // If the part indexes are different, that means the template contains
+        // a part somewhere. Insert a template marker _after_ the template.
+        // This is so that we don't get confused if the template also has an
+        // attribute binding (which would have inserted a partMarker before the
+        // template).
+        if (partIndex !== template.partIndex) {
+          const tm = createMarker(templateMarker);
+          node.parentNode!.insertBefore(tm, node.nextSibling);
+          // Be sure reset the walker on the template marker since it contains
+          // the generic marker text (and that'll be interpreted by the walker
+          // as a dynamic part). The walker will resume to the _next_ node.
+          node = tm;
+        }
+        walker.currentNode = node;
         continue;
       }
 
@@ -128,16 +142,7 @@ export class Template {
         }
 
         if ((node as Element).tagName === 'TEMPLATE') {
-          // Insert a template marker _after_ the template. This is so that we
-          // don't get confused if the template also has an attribute binding
-          // (which would have inserted a partMarker before the template).
-          //
-          // TODO If we could figure out if this template holds no bindings, we
-          // could skip generating this template marker. That'll speed up
-          // TemplateInstance cloning later on.
-          const tm = createMarker(templateMarker);
-          node.parentNode!.insertBefore(tm, node.nextSibling);
-          stack.push(tm);
+          stack.push({node, partIndex});
           walker.currentNode = (node as HTMLTemplateElement).content;
         }
       } else if (node.nodeType === 3 /* Node.TEXT_NODE */) {
