@@ -424,27 +424,6 @@ export class PropertyCommitter extends AttributeCommitter {
 
 export class PropertyPart extends AttributePart {}
 
-// Detect event listener options support. If the `capture` property is read
-// from the options object, then options are supported. If not, then the thrid
-// argument to add/removeEventListener is interpreted as the boolean capture
-// value so we should only pass the `capture` property.
-let eventOptionsSupported = false;
-
-try {
-  const options = {
-    get capture() {
-      eventOptionsSupported = true;
-      return false;
-    }
-  };
-  // tslint:disable-next-line:no-any
-  window.addEventListener('test', options as any, options);
-  // tslint:disable-next-line:no-any
-  window.removeEventListener('test', options as any, options);
-} catch (_e) {
-}
-
-
 type EventHandlerWithOptions =
     EventListenerOrEventListenerObject&Partial<AddEventListenerOptions>;
 export class EventPart implements Part {
@@ -477,42 +456,78 @@ export class EventPart implements Part {
       return;
     }
 
-    const newListener = this.__pendingValue;
-    const oldListener = this.value;
-    const shouldRemoveListener = newListener == null ||
-        oldListener != null &&
-            (newListener.capture !== oldListener.capture ||
-             newListener.once !== oldListener.once ||
-             newListener.passive !== oldListener.passive);
+    const {
+      __boundHandleEvent: handler,
+      __pendingValue: newListener,
+      element,
+      eventName,
+      value: oldListener,
+    } = this;
+
+    const removed = newListener == null && oldListener != null;
+    const changed = newListener != null && oldListener != null &&
+        (newListener.capture !== oldListener.capture ||
+         newListener.once !== oldListener.once ||
+         newListener.passive !== oldListener.passive);
+    const shouldRemoveListener = removed || changed;
     const shouldAddListener =
         newListener != null && (oldListener == null || shouldRemoveListener);
 
     if (shouldRemoveListener) {
-      this.element.removeEventListener(
-          this.eventName, this.__boundHandleEvent, this.__options);
+      element.removeEventListener(eventName, handler, this.__options);
     }
     if (shouldAddListener) {
       this.__options = getOptions(newListener);
-      this.element.addEventListener(
-          this.eventName, this.__boundHandleEvent, this.__options);
+      element.addEventListener(eventName, handler, this.__options);
     }
     this.value = newListener;
     this.__pendingValue = noChange as EventHandlerWithOptions;
   }
 
   handleEvent(event: Event) {
-    if (typeof this.value === 'function') {
-      this.value.call(this.eventContext || this.element, event);
+    const {value} = this;
+    if (typeof value === 'function') {
+      value.call(this.eventContext || this.element, event);
     } else {
-      (this.value as EventListenerObject).handleEvent(event);
+      (value as EventListenerObject).handleEvent(event);
     }
   }
 }
 
-// We copy options because of the inconsistent behavior of browsers when reading
-// the third argument of add/removeEventListener. IE11 doesn't support options
-// at all. Chrome 41 only reads `capture` if the argument is an object.
-const getOptions = (o: AddEventListenerOptions|undefined) => o &&
-    (eventOptionsSupported ?
-         {capture: o.capture, passive: o.passive, once: o.once} :
-         o.capture as AddEventListenerOptions);
+type MaybeAddEventListenerOptions = AddEventListenerOptions|undefined;
+let getOptions =
+    (o: MaybeAddEventListenerOptions): MaybeAddEventListenerOptions => {
+      // Detect event listener options support. If the `capture` property is
+      // read from the options object, then options are supported. If not, then
+      // the third argument to add/removeEventListener is interpreted as the
+      // boolean capture value so we should only pass the `capture` property.
+      let eventOptionsSupported = false;
+
+      try {
+        const options = {
+          get capture() {
+            eventOptionsSupported = true;
+            return true;
+          }
+        };
+        // tslint:disable-next-line:no-any
+        addEventListener('test', getOptions as any, options);
+        // tslint:disable-next-line:no-any
+        removeEventListener('test', getOptions as any, options);
+      } catch {
+      }
+
+      if (eventOptionsSupported) {
+        // We copy options because of the inconsistent behavior of browsers when
+        // reading the third argument of add/removeEventListener. Chrome 41 only
+        // reads `capture` if the argument is an object.
+        getOptions = (o: MaybeAddEventListenerOptions) =>
+            o && {capture: o.capture, passive: o.passive, once: o.once};
+      } else {
+        // IE11 doesn't support options at all.
+        getOptions = (o: MaybeAddEventListenerOptions) =>
+            o && o.capture as AddEventListenerOptions;
+      }
+
+      return getOptions(o);
+    };
