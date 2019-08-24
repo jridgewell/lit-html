@@ -37,75 +37,12 @@ export const isIterable = (value: unknown): value is Iterable<unknown> => {
       !!(value && (value as any)[Symbol.iterator]);
 };
 
-/**
- * Writes attribute values to the DOM for a group of AttributeParts bound to a
- * single attibute. The value is only set once even if there are multiple parts
- * for an attribute.
- */
-export class AttributeCommitter {
-  readonly element: Element;
-  readonly name: string;
-  readonly strings: ReadonlyArray<string>;
-  readonly parts: ReadonlyArray<AttributePart>;
-  dirty = true;
 
-  constructor(element: Element, name: string, strings: ReadonlyArray<string>) {
-    this.element = element;
-    this.name = name;
-    this.strings = strings;
-    this.parts = [];
-    for (let i = 0; i < strings.length - 1; i++) {
-      (this.parts as AttributePart[])[i] = this._createPart();
-    }
-  }
-
-  /**
-   * Creates a single part. Override this to create a differnt type of part.
-   */
-  protected _createPart(): AttributePart {
-    return new AttributePart(this);
-  }
-
-  protected _getValue(): unknown {
-    const strings = this.strings;
-    const l = strings.length - 1;
-    let text = '';
-
-    for (let i = 0; i < l; i++) {
-      text += strings[i];
-      const part = this.parts[i];
-      if (part !== undefined) {
-        const v = part.value;
-        if (isPrimitive(v) || !isIterable(v)) {
-          text += typeof v === 'string' ? v : String(v);
-        } else {
-          for (const t of v) {
-            text += typeof t === 'string' ? t : String(t);
-          }
-        }
-      }
-    }
-
-    text += strings[l];
-    return text;
-  }
-
-  commit(): void {
-    if (this.dirty) {
-      this.dirty = false;
-      this.element.setAttribute(this.name, this._getValue() as string);
-    }
-  }
-}
-
-/**
- * A Part that controls all or part of an attribute value.
- */
-export class AttributePart implements Part {
-  readonly committer: AttributeCommitter;
+class CommitterPart implements Part {
+  readonly committer: AttributeCommitter | PropertyCommitter;
   value: unknown = undefined;
 
-  constructor(committer: AttributeCommitter) {
+  constructor(committer: AttributeCommitter | PropertyCommitter) {
     this.committer = committer;
   }
 
@@ -131,6 +68,87 @@ export class AttributePart implements Part {
       return;
     }
     this.committer.commit();
+  }
+}
+
+class Committer {
+  readonly element: Element;
+  readonly name: string;
+  readonly strings: ReadonlyArray<string>;
+  readonly parts: ReadonlyArray<CommitterPart>;
+  dirty = true;
+
+  constructor(element: Element, name: string, strings: ReadonlyArray<string>) {
+    this.element = element;
+    this.name = name;
+    this.strings = strings;
+    const parts = [];
+    for (let i = 0; i < strings.length - 1; i++) {
+      parts[i] = this._createPart();
+    }
+    this.parts = parts;
+  }
+
+  protected _createPart(): CommitterPart {
+    throw new Error('unimplemented');
+  }
+
+  toString(): string {
+    const strings = this.strings;
+    const l = strings.length - 1;
+    let text = '';
+
+    for (let i = 0; i < l; i++) {
+      text += strings[i];
+      const part = this.parts[i];
+      if (part !== undefined) {
+        const v = part.value;
+        if (isPrimitive(v) || !isIterable(v)) {
+          text += typeof v === 'string' ? v : String(v);
+        } else {
+          for (const t of v) {
+            text += typeof t === 'string' ? t : String(t);
+          }
+        }
+      }
+    }
+
+    text += strings[l];
+    return text;
+  }
+}
+
+/**
+ * Writes attribute values to the DOM for a group of AttributeParts bound to a
+ * single attibute. The value is only set once even if there are multiple parts
+ * for an attribute.
+ */
+export class AttributeCommitter extends Committer {
+  /**
+   * Creates a single part. Override this to create a differnt type of part.
+   */
+  protected _createPart(): AttributePart {
+    return new AttributePart(this);
+  }
+
+  getValue(): string {
+    return this.toString();
+  }
+
+  commit(): void {
+    if (this.dirty) {
+      this.dirty = false;
+      this.element.setAttribute(this.name, this.getValue());
+    }
+  }
+}
+
+/**
+ * A Part that controls all or part of an attribute value.
+ */
+export class AttributePart extends CommitterPart {
+  constructor(committer: AttributeCommitter) {
+    super(committer);
   }
 }
 
@@ -393,7 +411,7 @@ export class BooleanAttributePart implements Part {
  * multiple expressions, then the strings are expressions are interpolated into
  * a string first.
  */
-export class PropertyCommitter extends AttributeCommitter {
+export class PropertyCommitter extends Committer {
   readonly single: boolean;
 
   constructor(element: Element, name: string, strings: ReadonlyArray<string>) {
@@ -406,23 +424,27 @@ export class PropertyCommitter extends AttributeCommitter {
     return new PropertyPart(this);
   }
 
-  protected _getValue() {
+  getValue(): unknown {
     if (this.single) {
       return this.parts[0].value;
     }
-    return super._getValue();
+    return super.toString();
   }
 
   commit(): void {
     if (this.dirty) {
       this.dirty = false;
       // tslint:disable-next-line:no-any
-      (this.element as any)[this.name] = this._getValue();
+      (this.element as any)[this.name] = this.getValue();
     }
   }
 }
 
-export class PropertyPart extends AttributePart {}
+export class PropertyPart extends CommitterPart {
+  constructor(committer: PropertyCommitter) {
+    super(committer);
+  }
+}
 
 // Detect event listener options support. If the `capture` property is read
 // from the options object, then options are supported. If not, then the thrid
