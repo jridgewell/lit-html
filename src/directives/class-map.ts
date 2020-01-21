@@ -108,6 +108,6 @@ export const classMap = directive((classInfo: ClassInfo) => (part: Part) => {
   if (changed) {
     const classes: string[] = [];
     previousClasses.forEach((_: unknown, key: string) => classes.push(key));
-    element.setAttribute('class', classes.join(' '));
+    part.setValue(classes.join(' '));
   }
 });
